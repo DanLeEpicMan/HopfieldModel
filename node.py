@@ -4,7 +4,13 @@ import numpy as np
 
 class Network:
     '''
-    A Hopfield Model neural network. Patterns are
+    A Hopfield Model neural network. 
+    Patterns are `n`-sized arrays whose entires (nodes) are either 1 or -1.
+    
+    Weights are computed via superposition, i.e. `w_{ij}` is the sum of `p_{i} * p_{j}` for each pattern
+    p, and dividing everything by the total number of patterns.\n
+    New nodes are computed via linear combinations of the weights and applying the `sgn` function.\n
+    As a result of the above two, both patterns and their analogs will be stable attractors.
     '''
     def __init__(self, patterns: np.ndarray) -> None:
         '''
@@ -24,16 +30,14 @@ class Network:
           `weights`: The computed weights from `patterns`. Based on superposition of terms.
           `P`: The total number of patterns.
           `N`: The total number of information in each pattern.
-          
         '''
         self._patterns = patterns
         self._P = len(patterns)
         self._N = len(patterns[0])
 
         self._weights = np.empty((self._N, self._N), dtype=np.float64)
-        # since the weight are symmetric (w_{ij} = w_{ji}), 
-        # looping over the lower triangular 
-        # is sufficient computation
+        # since the weights are symmetric (w_{ij} = w_{ji}), 
+        # it is only necessary to loop over the lower triangle of the weight matrix.
         for i in range(self._N):
             for j in range(i + 1):
                 weight_sum = 0.0
@@ -82,7 +86,7 @@ class Network:
         '''
         Computes the stable configuration of the given state.
 
-        A TypeError is raised if the given state is unequal size to the patterns.
+        A ValueError is raised if the given state is not the same size as the patterns.
         '''
         if len(initial_state) != self.N: 
             raise ValueError(f"Invalid input size given. Expected {self.N}, got {len(initial_state)}")
