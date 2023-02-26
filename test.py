@@ -1,8 +1,6 @@
 import numpy as np
+import altair as alt, pandas as pd
 from network import Network
-
-
-S = list([x1, y1, x2, y2] for x1 in range(0, 2) for x2 in range(0, 2) for y1 in range(0, 2) for y2 in range(0, 2))
 
 
 def create_space(N: int):
@@ -21,7 +19,7 @@ def create_space(N: int):
         '''
         for x in range(2):
             if len(comb) == N-1:
-                space.append(convert(comb + [x]))
+                space.append(np.array(convert(comb + [x]), dtype=np.int8))
             else:
                 looper(comb + [x])
     
@@ -29,16 +27,29 @@ def create_space(N: int):
     
     return space
 
-print(create_space(6))
+space = create_space(6)
+data = {}
 
-net1 = Network(patterns=np.array([
+net = Network(patterns=np.array([
     [1, 1, 1, -1, 1, 1],
     [-1, 1, -1, -1, 1, -1]
 ], dtype=np.int8))
 
-net2 = Network(patterns=np.array([
-    [1, 1, 1, -1, 1, 1],
-    [-1, 1, -1, -1, 1, -1]
-], dtype=np.int8), omit_symmetric_weights=False)
+for config in space:
+    stable = net.compute(config)
+    key=str(stable)
+    data[key] = data.get(key, 0) + 1
 
-print(net1.weights)
+new_data = pd.DataFrame.from_dict({
+    "Attractors": data.keys(),
+    "#": data.values()
+})
+
+hist = alt.Chart(new_data).mark_bar(size=30).encode(
+    x="Attractors",
+    y="#"
+).properties(
+    width=250
+).configure_axisX(labelAngle=45, labelColor='gray')
+
+hist.show()
