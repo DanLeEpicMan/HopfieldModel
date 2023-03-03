@@ -1,31 +1,7 @@
 import numpy as np
 import altair as alt, pandas as pd
-from network import Network
+from network import Network, create_space
 
-
-def create_space(N: int):
-    '''
-    Creates `{-1, 1}^N`
-    '''
-    space = []
-    def convert(l: list):
-        for i in range(len(l)):
-            l[i] = -1 if l[i]==0 else 1
-        return l
-
-    def looper(comb):
-        '''
-        comb: combinations generated thus far
-        '''
-        for x in range(2):
-            if len(comb) == N-1:
-                space.append(np.array(convert(comb + [x]), dtype=np.int8))
-            else:
-                looper(comb + [x])
-    
-    looper([])
-    
-    return space
 
 space = create_space(6)
 data = {}
@@ -35,19 +11,29 @@ net = Network(patterns=np.array([
     [-1, 1, -1, -1, 1, -1]
 ], dtype=np.int8))
 
+def to_color(x: int) -> alt.Color:
+    match x:
+        case 1:
+            return 'Initial'
+        case -1:
+            return 'Analog'
+        case _:
+            return 'Spurious'
+
 for config in space:
     stable = net.compute(config)
     key=str(stable)
-    data[key] = data.get(key, 0) + 1
+    data[key] = data.get(key, [stable, 0, to_color(net.is_learned_pattern(stable))])
+    data[key][1] = data[key][1] + 1
 
-new_data = pd.DataFrame.from_dict({
-    "Attractors": data.keys(),
-    "#": data.values()
-})
+data = pd.DataFrame(data).transpose().rename(columns={0: 'Patterns', 1: 'Value', 2: 'Type'})
 
-hist = alt.Chart(new_data).mark_bar(size=30).encode(
-    x="Attractors",
-    y="#"
+print(data)
+
+hist = alt.Chart(data).mark_bar(size=30).encode(
+    x="Patterns",
+    y="Value",
+    color="Type"
 ).properties(
     width=250
 ).configure_axisX(labelAngle=45, labelColor='gray')

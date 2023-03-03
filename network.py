@@ -26,14 +26,15 @@ class Network:
     # Attributes
     The following attributes are read-only.
       `patterns`: The given initial patterns. 
-      All patterns are stable attractors, but not all stable attractors are patterns (see `compute` docstring)
+      All patterns are stable attractors, but not all stable attractors are patterns (see `compute` docstring).
+      Note that this is a matrix, with each row being a particular pattern.
       `weights`: The computed weights from `patterns`. See `__init__` docstring for how they're computed.
       `P`: The total number of patterns.
       `N`: The total number of information (nodes) in each pattern.
 
     # Methods
-      `sgn`: Returns the sign of x; 1 if x is positive or 0, -1 if x is negative.
       `compute`: Transforms the given state configuration into a stable attractor.
+      `is_learned_patterns`: Returns 1 if the given pattern is an initial pattern, -1 if it's the negative of some initial pattern, and 0 otherwise.
     '''
     def __init__(self, patterns: np.ndarray, *, omit_symmetric_weights: bool = True, compute_weights: Callable[[np.ndarray, int, int], np.ndarray] = None) -> None:
         '''
@@ -56,7 +57,7 @@ class Network:
         ``` 
         And is expected to return an `N x N` matrix of weights, where `w_{ij}` is how the `i`th node is affected by the `j`th node.
         '''
-        self._patterns = patterns
+        self._patterns = patterns if isinstance(patterns, np.ndarray) else np.array(patterns, dtype=np.int8)
         self._P = len(patterns)
         self._N = len(patterns[0])
 
@@ -104,13 +105,6 @@ class Network:
         '''
         return self._patterns
 
-    @staticmethod
-    def sgn(x: float, /) -> int:
-        '''
-        Returns the sign of x. 0 is treated as positive
-        '''
-        return 1 if x >=0 else -1
-
     def compute(self, initial_state: np.ndarray, /) -> np.ndarray:
         '''
         Computes the stable configuration of the given state based on `weights`.
@@ -132,5 +126,53 @@ class Network:
                 state_sum = 0.0
                 for j in range(len(current)):
                     state_sum += self.weights[i, j] * current[j]
-                current[i] = self.sgn(state_sum)
+                current[i] = sgn(state_sum)
         return current
+    
+    def is_learned_pattern(self, pattern: list[int] | np.ndarray[np.int8]) -> int:
+        '''
+        Checks if the given pattern is one of the initial trained patterns.
+
+        Returns 1 if the given pattern is an initial pattern, -1 if it's the opposite (negative)
+        of an initial pattern, and 0 otherwise. Note that this will not check for other spurious states.
+        '''
+        for i in range(self.P):
+            check = self.patterns[i, :] # grabs the ith row
+            if np.array_equal(pattern, check):
+                return 1
+            elif np.array_equal(pattern, -1 * check):
+                return -1
+            
+        return 0
+
+def create_space(N: int) -> list[np.ndarray[np.int8]]:
+    '''
+    Creates `{-1, 1}^N`
+
+    Intended to run tests with `Network`.
+    '''
+    space = []
+    def convert(l: list):
+        for i in range(len(l)):
+            l[i] = -1 if l[i]==0 else 1
+        return l
+
+    def looper(comb):
+        '''
+        comb: combinations generated thus far
+        '''
+        for x in range(2):
+            if len(comb) == N-1:
+                space.append(np.array(convert(comb + [x]), dtype=np.int8))
+            else:
+                looper(comb + [x])
+    
+    looper([])
+    
+    return space
+
+def sgn(x: float, /) -> int:
+    '''
+    Returns the sign of x. 0 is treated as positive
+    '''
+    return 1 if x >=0 else -1
