@@ -3,14 +3,20 @@ import altair as alt, pandas as pd
 from network import Network, create_space
 
 
-space = create_space(6)
+N=6 # the length of patterns
+P=3 # the number of initial patterns
+
+space = create_space(N)
 data = {}
 
+mat = np.random.randint(2, size=(P, N), dtype=np.int8)
+mat[mat == 0] = -1
+
 net = Network(patterns=np.array([
-    [1, 1, 1, -1, 1, 1],
-    [-1, 1, -1, -1, 1, -1],
-    [-1, 1, 1, -1, 1, 1]
-], dtype=np.int8))
+    [-1, 1, -1, 1, 1, -1],
+    [1, 1, 1, -1, 1, -1],
+    [-1, 1, -1, 1, 1, 1]
+]))
 
 def state_type_str(x: int) -> str:
     match x:

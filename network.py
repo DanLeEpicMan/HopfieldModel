@@ -12,9 +12,16 @@ combinations of an odd number of patterns (mixture states) also act as attractor
 Everything explained above happens by default; almost everything can be configured. See docstrings for `Network`.
 '''
 import math
+from random import random
 import numpy as np
 from typing import Callable
 
+
+def sgn(x: float, /) -> int:
+    '''
+    Returns the sign of x. 0 is treated as positive
+    '''
+    return 1 if x >=0 else -1
 
 class Network:
     '''
@@ -36,9 +43,15 @@ class Network:
       `compute`: Transforms the given state configuration into a stable attractor.
       `is_learned_patterns`: Returns 1 if the given pattern is an initial pattern, -1 if it's the negative of some initial pattern, and 0 otherwise.
     '''
-    def __init__(self, patterns: np.ndarray, *, omit_symmetric_weights: bool = True, compute_weights: Callable[[np.ndarray, int, int], np.ndarray] = None) -> None:
+    def __init__(self, 
+            patterns: np.ndarray, 
+            *, 
+            certainty: float = math.inf,
+            omit_symmetric_weights: bool = True, 
+            compute_weights: Callable[[np.ndarray, int, int], np.ndarray] = None
+        ) -> None:
         '''
-        Initializes the Hopfield model by creating a weight matrix.
+        Initializes the Hopfield model by creating a weight matrix and a sigmoid function.
         ## Parameters
         `patterns`: An `m x n` matrix. Each row represents a pattern, each with `n` pieces of information (1 or -1).
         
@@ -48,7 +61,17 @@ class Network:
         [-1, 1, -1, 1],
         [1, 1, -1, -1]]
         ```
-        `omit_symmetric_weights = True`: If true, then symmetric weights (`w_{ii}`) will be set to 0 instead of computed.\n
+
+        `certainty = math.inf`: A nonnegative number (including `+infty`) parameterizing 
+        the degree of randomness used in computing new states. 
+        See the `compute` docstring for an explanation on how this is used. It is recommended 
+        that models trained on larger inputs use smaller values of certainty.
+        
+        A value of 0 corresponds to total randomness (i.e. 50% chance of being 1 and -1 regardless of the input),
+        and `math.inf` corresponds to total determinism (i.e. 100% of being 1 if input is positive).\n
+
+        `omit_symmetric_weights = True`: If true, then symmetric weights (`w_{ii}`) will be set to 0.\n
+
         `compute_weights = None`: If given, this function will be used to compute weights instead of the default superposition of terms.\n
         (I.e. By default `w_{ij}` is the sum of `p_{i} * p_{j}` for each pattern `p`, and dividing everything by the total number of patterns.)\n
         This will be called like so:
@@ -56,10 +79,25 @@ class Network:
             self.weights = compute_weights(patterns, N, P)
         ``` 
         And is expected to return an `N x N` matrix of weights, where `w_{ij}` is how the `i`th node is affected by the `j`th node.
+
+        ## Raises
+        `ValueError`: `certainty` is negative.
         '''
+        if certainty < 0: raise ValueError("Certainty parameter must be nonnegative.")
+
         self._patterns = patterns if isinstance(patterns, np.ndarray) else np.array(patterns, dtype=np.int8)
         self._P = len(patterns)
         self._N = len(patterns[0])
+
+        if math.isinf(certainty):
+            self._sigmoid = sgn
+        else:
+            def wrap(rand):
+                def sig(x):
+                    chance = (1 + math.tanh(rand * x)) / 2
+                    return 1 if chance >= random() else -1
+                return sig
+            self._sigmoid = wrap(certainty)
 
         if compute_weights is not None:
             self._weights = compute_weights(patterns, self._N, self._P)
@@ -105,13 +143,32 @@ class Network:
         '''
         return self._patterns
 
-    def compute(self, initial_state: np.ndarray, /) -> np.ndarray:
+    def compute(self, initial_state: np.ndarray, *, sync: bool = False, sigmoid: Callable[[float], int] = sgn) -> np.ndarray:
         '''
-        Computes the stable configuration of the given state based on `weights`.
+        Computes the stable configuration of the given state based on `weights`. Every pattern is a stable attractor, but they are not the only ones. 
+        Negative analogs are also stable attractors, along with states that are equidistant to other attractors (with respect to Hamming Distance).
 
-        By default, every pattern is a stable attractor, but they are not the only ones. 
-        Negative analogs are also stable attractors, along with states that are equidistant to other attractors.
-        Sometimes there may exist other attractors.
+        ### Sync Parameter
+
+        By default, the pattern is computed asynchronously. More specifically, at the `i`th step, the `i mod N`
+        node is updated, and this new pattern is used for the `(i + 1)` step. 
+        (E.g. On Step 0, the 0th node is updated; this new pattern is used for Step 1 to update Node 1).
+
+        If synchronous behavior is desired (i.e. all nodes are updated on the same step, using the same pattern),
+        then pass `sync = True`. If `P` is close enough to `N` (see attributes), 
+        this may result in an infinite updating loop.
+
+        ### Certainty Hyperparameter
+
+        By default, the state of a neuron is determined like so:
+        ```
+        State of neuron_{i} = sgn(sum of weight_{ij} * neuron_{j})
+        ```
+        If the certainty parameter was given in `__init__`, then the following formula will be used instead:
+        ```
+        Probability(neuron_{i} = 1) = (1 + math.tanh(certainty * sum)) / 2
+        ```
+        And of course, `P(neuron_{i} = -1) = 1 - P(neuron_{i} = 1)`. 
 
         ### Raises 
         `ValueError`: The given state is not the same size as the patterns.
@@ -120,13 +177,14 @@ class Network:
             raise ValueError(f"Invalid input size given. Expected {self.N}, got {len(initial_state)}")
         previous = np.zeros(1)
         current = initial_state
+
         while not np.array_equal(previous, current):
             previous = current
+            this_step = current.copy() if sync else current # if sync is true, update a copy instead
             for i in range(len(current)):
-                state_sum = 0.0
-                for j in range(len(current)):
-                    state_sum += self.weights[i, j] * current[j]
-                current[i] = sgn(state_sum)
+                this_step[i] = self._sigmoid(np.dot(self.weights[i, :], current))
+            current = this_step
+
         return current
     
     def is_learned_pattern(self, pattern: list[int] | np.ndarray[np.int8]) -> int:
@@ -171,8 +229,3 @@ def create_space(N: int) -> list[np.ndarray[np.int8]]:
     
     return space
 
-def sgn(x: float, /) -> int:
-    '''
-    Returns the sign of x. 0 is treated as positive
-    '''
-    return 1 if x >=0 else -1
