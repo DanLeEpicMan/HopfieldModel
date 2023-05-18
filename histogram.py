@@ -3,8 +3,8 @@ import altair as alt, pandas as pd
 from network import Network, create_space
 
 
-N=6 # the length of patterns
-P=3 # the number of initial patterns
+N=10 # the length of patterns
+P=2 # the number of initial patterns
 
 space = create_space(N)
 data = {}
@@ -13,9 +13,8 @@ mat = np.random.randint(2, size=(P, N), dtype=np.int8)
 mat[mat == 0] = -1
 
 net = Network(patterns=np.array([
-    [-1, 1, -1, 1, 1, -1],
-    [1, 1, 1, -1, 1, -1],
-    [-1, 1, -1, 1, 1, 1]
+    [-1, 1, -1, 1, 1, -1, 1, -1, 1, 1],
+    [1, 1, 1, -1, 1, -1, -1, -1, 1, -1]
 ]))
 
 def state_type_str(x: int) -> str:
@@ -23,7 +22,7 @@ def state_type_str(x: int) -> str:
         case 1:
             return 'Initial'
         case -1:
-            return 'Analog'
+            return 'Opposite'
         case _:
             return 'Spurious'
 
@@ -40,9 +39,11 @@ data.index = np.arange(len(data.index))
 hist = alt.Chart(data).mark_bar(size=30).encode(
     x=alt.X("Label", title='Pattern'),
     y=alt.Y("Value", title='# of Attracted States'),
-    color=alt.Color("Type", scale=alt.Scale(scheme='set1'))
+    color=alt.Color("Type", scale=alt.Scale(
+        domain=['Initial', 'Opposite', 'Spurious'],
+        range=['#1679fa','#d91414','#35b821']))
 ).properties(
     width=40*len(data.index)
-).configure_axisX(labelAngle=-45, labelColor='gray')
+).configure_axisX(labelAngle=-45, labelColor='black')
 
 hist.show()

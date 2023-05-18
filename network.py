@@ -32,9 +32,8 @@ class Network:
 
     # Attributes
     The following attributes are read-only.
-      `patterns`: The given initial patterns. 
+      `patterns`: The given initial patterns. Should be a list of -1s and 1s. `ndarrays` will automatically be reshaped.
       All patterns are stable attractors, but not all stable attractors are patterns (see `compute` docstring).
-      Note that this is a matrix, with each row being a particular pattern.
       `weights`: The computed weights from `patterns`. See `__init__` docstring for how they're computed.
       `P`: The total number of patterns.
       `N`: The total number of information (nodes) in each pattern.
@@ -44,7 +43,7 @@ class Network:
       `is_learned_patterns`: Returns 1 if the given pattern is an initial pattern, -1 if it's the negative of some initial pattern, and 0 otherwise.
     '''
     def __init__(self, 
-            patterns: np.ndarray, 
+            patterns: list[np.ndarray | list[int]], 
             *, 
             certainty: float = math.inf,
             omit_symmetric_weights: bool = True, 
@@ -53,7 +52,9 @@ class Network:
         '''
         Initializes the Hopfield model by creating a weight matrix and a sigmoid function.
         ## Parameters
-        `patterns`: An `m x n` matrix. Each row represents a pattern, each with `n` pieces of information (1 or -1).
+        `patterns`: A list of patterns to be remembered, whose entires are either -1 or 1.
+        The inputs can be either Python lists or `ndarrays` of any shape; 
+        this will automatically reshape in the latter case.
         
         E.g. The following array is 3 patterns with 4 bits of information each
         ```
@@ -64,8 +65,7 @@ class Network:
 
         `certainty = math.inf`: A nonnegative number (including `+infty`) parameterizing 
         the degree of randomness used in computing new states. 
-        See the `compute` docstring for an explanation on how this is used. It is recommended 
-        that models trained on larger inputs use smaller values of certainty.
+        See the `compute` docstring for an explanation on how this is used.
         
         A value of 0 corresponds to total randomness (i.e. 50% chance of being 1 and -1 regardless of the input),
         and `math.inf` corresponds to total determinism (i.e. 100% of being 1 if input is positive).\n
@@ -85,9 +85,12 @@ class Network:
         '''
         if certainty < 0: raise ValueError("Certainty parameter must be nonnegative.")
 
-        self._patterns = patterns if isinstance(patterns, np.ndarray) else np.array(patterns, dtype=np.int8)
         self._P = len(patterns)
-        self._N = len(patterns[0])
+        self._N = len(patterns[0]) if isinstance(patterns[0], list) else patterns[0].size # because the first entry can be a list or nparray
+
+        self._patterns = np.empty((self._P, self._N))
+        for i in range(len(patterns)):
+            self._patterns[i] = patterns[i] if isinstance(patterns[i], list) else patterns[i].reshape(-1)
 
         if math.isinf(certainty):
             self._sigmoid = sgn
@@ -112,7 +115,7 @@ class Network:
                         continue
                     weight_sum = 0.0
                     for k in range(self._P):
-                        weight_sum += patterns[k, i] * patterns[k, j]
+                        weight_sum += self._patterns[k, i] * self._patterns[k, j]
                     self._weights[i, j] = self._weights[j, i] = 1/self._N * weight_sum 
 
     @property
@@ -143,10 +146,12 @@ class Network:
         '''
         return self._patterns
 
-    def compute(self, initial_state: np.ndarray, *, sync: bool = False, sigmoid: Callable[[float], int] = sgn) -> np.ndarray:
+    def compute(self, initial_state: np.ndarray, *, sync: bool = False) -> np.ndarray:
         '''
         Computes the stable configuration of the given state based on `weights`. Every pattern is a stable attractor, but they are not the only ones. 
-        Negative analogs are also stable attractors, along with states that are equidistant to other attractors (with respect to Hamming Distance).
+        Negative initial patterns are also stable attractors, along with states that are equidistant to other attractors (with respect to Hamming Distance).
+
+        `initial_state` can be of any shape; this method will automatically reshape everything.
 
         ### Sync Parameter
 
@@ -173,6 +178,9 @@ class Network:
         ### Raises 
         `ValueError`: The given state is not the same size as the patterns.
         '''
+        original_shape = initial_state.shape
+        initial_state = initial_state.reshape(-1)
+
         if len(initial_state) != self.N: 
             raise ValueError(f"Invalid input size given. Expected {self.N}, got {len(initial_state)}")
         previous = np.zeros(1)
@@ -185,7 +193,7 @@ class Network:
                 this_step[i] = self._sigmoid(np.dot(self.weights[i, :], current))
             current = this_step
 
-        return current
+        return current.reshape(original_shape)
     
     def is_learned_pattern(self, pattern: list[int] | np.ndarray[np.int8]) -> int:
         '''
